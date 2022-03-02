@@ -566,6 +566,15 @@ public class MainActivity extends AppCompatActivity {
 //                sRobot.skidJoy(x, y);
                 break;
 
+            case "position":
+                float pos_x = Float.parseFloat(payload.getString("x"));
+                float pos_y = Float.parseFloat(payload.getString("y"));
+                float angle = Integer.parseInt(payload.getString("angle"));
+                float yaw = Float.parseFloat(payload.getString("yaw"));
+                logsTextView.append("\n" + "[MQTT] goToPosition (" + pos_x + ", " + pos_y + ", " + angle + "," + yaw + ")");
+//                sRobot.goToPosition(pos_x, pos_y, angle, yaw);
+                break;
+
             case "turn_by":
                 float turnAngle = Float.parseFloat(payload.getString("angle"));
                 logsTextView.append("\n" + "[MQTT] TurnBy ( " + turnAngle + " )");
