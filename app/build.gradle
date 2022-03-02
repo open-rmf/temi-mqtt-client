@@ -20,6 +20,8 @@ android {
         buildConfigField("String", "MQTT_HOSTNAME", secretsProperties['MQTT_HOSTNAME'])
         buildConfigField("String", "MQTT_USERNAME", secretsProperties['MQTT_USERNAME'])
         buildConfigField("String", "MQTT_PASSWORD", secretsProperties['MQTT_PASSWORD'])
+        buildConfigField("String", "VIDEOROOM_URL", "\"https://meet.jit.si\"")
+        buildConfigField("String", "ROBOT_NAME", "\"temi_2\"")
     }
     signingConfigs {
         debug {
@@ -56,6 +58,8 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.3.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.0'
     implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.0.0'
+    implementation ('org.jitsi.react:jitsi-meet-sdk:3.10.2') { transitive = true }
+
 
     // paho-mqtt
     // https://github.com/eclipse/paho.mqtt.java
@@ -65,5 +69,5 @@ dependencies {
 
     // temi
     // https://github.com/robotemi/sdk
-    implementation 'com.robotemi:sdk:0.10.77'
+//    implementation 'com.robotemi:sdk:0.10.77'
 }
