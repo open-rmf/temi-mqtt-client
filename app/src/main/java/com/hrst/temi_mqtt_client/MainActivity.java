@@ -18,22 +18,22 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
 import android.view.View;
-import android.view.inputmethod.InputMethodManager;
-import android.widget.EditText;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.net.MalformedURLException;
 import java.net.URL;
 
-//import com.robotemi.sdk.BatteryData;
-//import com.robotemi.sdk.Robot;
-//import com.robotemi.sdk.TtsRequest;
-//import com.robotemi.sdk.listeners.OnBatteryStatusChangedListener;
-//import com.robotemi.sdk.listeners.OnDetectionStateChangedListener;
-//import com.robotemi.sdk.listeners.OnGoToLocationStatusChangedListener;
-//import com.robotemi.sdk.listeners.OnRobotReadyListener;
-//import com.robotemi.sdk.listeners.OnUserInteractionChangedListener;
+import com.robotemi.sdk.BatteryData;
+import com.robotemi.sdk.Robot;
+import com.robotemi.sdk.TtsRequest;
+import com.robotemi.sdk.listeners.OnBatteryStatusChangedListener;
+import com.robotemi.sdk.listeners.OnDetectionStateChangedListener;
+import com.robotemi.sdk.listeners.OnGoToLocationStatusChangedListener;
+import com.robotemi.sdk.listeners.OnRobotReadyListener;
+import com.robotemi.sdk.listeners.OnUserInteractionChangedListener;
+import com.robotemi.sdk.navigation.listener.OnCurrentPositionChangedListener;
+import com.robotemi.sdk.navigation.model.Position;
 
 import org.eclipse.paho.android.service.MqttAndroidClient;
 import org.eclipse.paho.client.mqttv3.IMqttActionListener;
@@ -44,8 +44,8 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
-//import org.jetbrains.annotations.NotNull;
-//import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -55,21 +55,21 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
 
-//public class MainActivity extends AppCompatActivity implements
-//        OnRobotReadyListener,
-//        OnBatteryStatusChangedListener,
-//        OnGoToLocationStatusChangedListener,
-//        OnDetectionStateChangedListener,
-//        OnUserInteractionChangedListener {
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements
+        OnRobotReadyListener,
+        OnBatteryStatusChangedListener,
+        OnGoToLocationStatusChangedListener,
+        OnCurrentPositionChangedListener,
+        OnDetectionStateChangedListener,
+        OnUserInteractionChangedListener {
     private static final String TAG = "MAIN";
     public static final String VIDEO_URL = "com.hrst.media.VIDEO_URL";
     public static final String WEBVIEW_URL = "com.hrst.media.WEBVIEW_URL";
 
     private static final Handler sHandler = new Handler();
-//    private static Robot sRobot;
+    private static Robot sRobot;
     // Temporarily set this for testing
-    private static String sSerialNumber = "0000";
+    private static String sSerialNumber = BuildConfig.ROBOT_SERIAL;
     private static TextView logsTextView;
     private static ScrollView logsScrollView;
 
@@ -100,11 +100,11 @@ public class MainActivity extends AppCompatActivity {
             Log.i(TAG, "Publish status");
             sHandler.postDelayed(this, 3000);
 
-//            try {
-//                 MainActivity.this.robotPublishStatus();
-//            } catch (JSONException e) {
-//                e.printStackTrace();
-//            }
+            try {
+                 MainActivity.this.robotPublishStatus();
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
         }
     };
 
@@ -120,11 +120,9 @@ public class MainActivity extends AppCompatActivity {
         logsScrollView = findViewById(R.id.logsScrollView);
 
         // initialize robot
-//        sRobot = Robot.getInstance();
+        sRobot = Robot.getInstance();
 
         // initialize hostname
-//        sHostNameView = findViewById(R.id.edit_text_host_name);
-//        sHostNameView.setText(getString(R.string.hostname, BuildConfig.MQTT_HOSTNAME));
         findViewById(R.id.button_connect).performClick();
     }
 
@@ -133,11 +131,12 @@ public class MainActivity extends AppCompatActivity {
         super.onStart();
 
         // add robot event listeners
-//        sRobot.addOnRobotReadyListener(this);
-//        sRobot.addOnBatteryStatusChangedListener(this);
-//        sRobot.addOnGoToLocationStatusChangedListener(this);
-//        sRobot.addOnDetectionStateChangedListener(this);
-//        sRobot.addOnUserInteractionChangedListener(this);
+        sRobot.addOnRobotReadyListener(this);
+        sRobot.addOnBatteryStatusChangedListener(this);
+        sRobot.addOnGoToLocationStatusChangedListener(this);
+        sRobot.addOnDetectionStateChangedListener(this);
+        sRobot.addOnUserInteractionChangedListener(this);
+        sRobot.addOnCurrentPositionChangedListener(this);
     }
 
     @Override
@@ -155,11 +154,11 @@ public class MainActivity extends AppCompatActivity {
         super.onStop();
 
         // remove robot event listeners
-//        sRobot.removeOnRobotReadyListener(this);
-//        sRobot.removeOnBatteryStatusChangedListener(this);
-//        sRobot.removeOnGoToLocationStatusChangedListener(this);
-//        sRobot.removeDetectionStateChangedListener(this);
-//        sRobot.removeOnUserInteractionChangedListener(this);
+        sRobot.removeOnRobotReadyListener(this);
+        sRobot.removeOnBatteryStatusChangedListener(this);
+        sRobot.removeOnGoToLocationStatusChangedListener(this);
+        sRobot.removeDetectionStateChangedListener(this);
+        sRobot.removeOnUserInteractionChangedListener(this);
     }
 
     @SuppressLint("LogNotTimber")
@@ -188,52 +187,52 @@ public class MainActivity extends AppCompatActivity {
      * @param isReady True if robot initialized correctly; False otherwise
      */
 //    @Override
-//    public void onRobotReady(boolean isReady) {
-//        if (isReady) {
-////            sSerialNumber = sRobot.getSerialNumber();
-////            sRobot.hideTopBar(); // hides temi's top menu bar
-////            sRobot.toggleNavigationBillboard(true); // hides navigation billboard
-//            Log.i(TAG, "[ROBOT][READY]");
-//
-//            // place app in temi's top bar menu
-//            try {
-//                final ActivityInfo activityInfo = getPackageManager().getActivityInfo(getComponentName(), PackageManager.GET_META_DATA);
-////                sRobot.onStart(activityInfo);
-//            } catch (PackageManager.NameNotFoundException e) {
-//                throw new RuntimeException(e);
-//            }
-//        }
-//    }
-//
+    public void onRobotReady(boolean isReady) {
+        if (isReady) {
+            sSerialNumber = sRobot.getSerialNumber();
+            sRobot.hideTopBar(); // hides temi's top menu bar
+            sRobot.toggleNavigationBillboard(true); // hides navigation billboard
+            Log.i(TAG, "[ROBOT][READY]");
+
+            // place app in temi's top bar menu
+            try {
+                final ActivityInfo activityInfo = getPackageManager().getActivityInfo(getComponentName(), PackageManager.GET_META_DATA);
+                sRobot.onStart(activityInfo);
+            } catch (PackageManager.NameNotFoundException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
     /**
      * Handles battery update events
      * @param batteryData Object containing battery state
      */
 //    @Override
-//    public void onBatteryStatusChanged(@Nullable BatteryData batteryData) {
-//        JSONObject payload = new JSONObject();
-//
-//        try {
-//            payload.put("percentage", batteryData != null ? batteryData.getBatteryPercentage() : 0);
-//        } catch (JSONException e) {
-//            e.printStackTrace();
-//        }
-//
-//        try {
-//            payload.put("is_charging", batteryData != null && batteryData.isCharging());
-//        } catch (JSONException e) {
-//            e.printStackTrace();
-//        }
-//
-//        try {
-//            if (mMqttClient != null && mMqttClient.isConnected()) {
-//                MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
-//                mMqttClient.publish("temi/" + sSerialNumber + "/status/utils/battery", message);
-//            }
-//        } catch (MqttException e) {
-//            e.printStackTrace();
-//        }
-//    }
+    public void onBatteryStatusChanged(@Nullable BatteryData batteryData) {
+        JSONObject payload = new JSONObject();
+
+        try {
+            payload.put("percentage", batteryData != null ? batteryData.getBatteryPercentage() : 0);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            payload.put("is_charging", batteryData != null && batteryData.isCharging());
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            if (mMqttClient != null && mMqttClient.isConnected()) {
+                MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
+                mMqttClient.publish("temi/" + sSerialNumber + "/status/utils/battery", message);
+            }
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
+    }
 
     /**
      * Handles go-to event updates
@@ -243,90 +242,90 @@ public class MainActivity extends AppCompatActivity {
      * @param description Verbose description of the event
      */
 //    @Override
-//    public void onGoToLocationStatusChanged(@NotNull String location, @NotNull String status, int descriptionId, @NotNull String description) {
-//        JSONObject payload = new JSONObject();
-//
-//        try {
-//            payload.put("location", location);
-//        } catch (JSONException e) {
-//            e.printStackTrace();
-//        }
-//
-//        try {
-//            payload.put("status", status);
-//        } catch (JSONException e) {
-//            e.printStackTrace();
-//        }
-//
-//        try {
-//            payload.put("description_id", descriptionId);
-//        } catch (JSONException e) {
-//            e.printStackTrace();
-//        }
-//
-//        try {
-//            payload.put("description", description);
-//        } catch (JSONException e) {
-//            e.printStackTrace();
-//        }
-//
-//        try {
-//            if (mMqttClient != null && mMqttClient.isConnected()) {
-//                MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
-//                mMqttClient.publish("temi/" + sSerialNumber + "/event/waypoint/goto", message);
-//            }
-//        } catch (MqttException e) {
-//            e.printStackTrace();
-//        }
-//    }
+    public void onGoToLocationStatusChanged(@NotNull String location, @NotNull String status, int descriptionId, @NotNull String description) {
+        JSONObject payload = new JSONObject();
+
+        try {
+            payload.put("location", location);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            payload.put("status", status);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            payload.put("description_id", descriptionId);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            payload.put("description", description);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            if (mMqttClient != null && mMqttClient.isConnected()) {
+                MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
+                mMqttClient.publish("temi/" + sSerialNumber + "/event/waypoint/goto", message);
+            }
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
+    }
 
     /**
      * On user detection events
      * @param state User detection state
      */
-//    @Override
-//    public void onDetectionStateChanged(int state) {
-//        JSONObject payload = new JSONObject();
-//
-//        try {
-//            payload.put("state", state);
-//        } catch (JSONException e) {
-//            e.printStackTrace();
-//        }
-//
-//        try {
-//            if (mMqttClient != null && mMqttClient.isConnected()) {
-//                MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
-//                mMqttClient.publish("temi/" + sSerialNumber + "/event/user/detection", message);
-//            }
-//        } catch (MqttException e) {
-//            e.printStackTrace();
-//        }
-//    }
+    @Override
+    public void onDetectionStateChanged(int state) {
+        JSONObject payload = new JSONObject();
+
+        try {
+            payload.put("state", state);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            if (mMqttClient != null && mMqttClient.isConnected()) {
+                MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
+                mMqttClient.publish("temi/" + sSerialNumber + "/event/user/detection", message);
+            }
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
+    }
 
     /**
      * On user interaction
      * @param isInteracting True if user is interacting, False otherwise
      */
 //    @Override
-//    public void onUserInteraction(boolean isInteracting) {
-//        JSONObject payload = new JSONObject();
-//
-//        try {
-//            payload.put("is_interacting", isInteracting);
-//        } catch (JSONException e) {
-//            e.printStackTrace();
-//        }
-//
-//        try {
-//            if (mMqttClient != null && mMqttClient.isConnected()) {
-//                MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
-//                mMqttClient.publish("temi/" + sSerialNumber + "/event/user/interaction", message);
-//            }
-//        } catch (MqttException e) {
-//            e.printStackTrace();
-//        }
-//    }
+    public void onUserInteraction(boolean isInteracting) {
+        JSONObject payload = new JSONObject();
+
+        try {
+            payload.put("is_interacting", isInteracting);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            if (mMqttClient != null && mMqttClient.isConnected()) {
+                MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
+                mMqttClient.publish("temi/" + sSerialNumber + "/event/user/interaction", message);
+            }
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
+    }
 
     //----------------------------------------------------------------------------------------------
     // UI HANDLER
@@ -451,20 +450,22 @@ public class MainActivity extends AppCompatActivity {
         JSONObject payload = new JSONObject();
         JSONArray waypointArray = new JSONArray();
 
-//        List<String> waypointList = sRobot.getLocations();
+        List<String> waypointList = sRobot.getLocations();
 
         // collect all waypoints
-//        for (String waypoint : waypointList) {
-//            waypointArray.put(waypoint);
-//        }
+        for (String waypoint : waypointList) {
+            waypointArray.put(waypoint);
+        }
 
         // generate payload
         payload.put("waypoint_list", waypointArray);
-//        payload.put("battery_percentage", Objects.requireNonNull(sRobot.getBatteryData()).getBatteryPercentage());
+        payload.put("battery_percentage", Objects.requireNonNull(sRobot.getBatteryData()).getBatteryPercentage());
 
         try {
             MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
-            mMqttClient.publish("temi/" + sSerialNumber + "/status/info", message);
+            if (mMqttClient.isConnected()) {
+                mMqttClient.publish("temi/" + sSerialNumber + "/status/info", message);
+            }
         } catch (MqttException e) {
             e.printStackTrace();
         }
@@ -502,7 +503,7 @@ public class MainActivity extends AppCompatActivity {
                     break;
 
                 case "tts":
-//                    sRobot.speak(TtsRequest.create(payload.getString("utterance"), true));
+                    sRobot.speak(TtsRequest.create(payload.getString("utterance"), true));
                     break;
 
                 case "media":
@@ -528,20 +529,20 @@ public class MainActivity extends AppCompatActivity {
 
         switch (command) {
             case "save":
-//                sRobot.saveLocation(locationName);
+                sRobot.saveLocation(locationName);
                 break;
 
             case "delete":
-//                sRobot.deleteLocation(locationName);
+                sRobot.deleteLocation(locationName);
                 break;
 
             case "goto":
                 // check that the location exists, then go to that location
-//                for (String location : sRobot.getLocations()){
-//                    if (location.equals(locationName.toLowerCase().trim())) {
-//                        sRobot.goTo(locationName.toLowerCase().trim());
-//                    }
-//                }
+                for (String location : sRobot.getLocations()){
+                    if (location.equals(locationName.toLowerCase().trim())) {
+                        sRobot.goTo(locationName.toLowerCase().trim());
+                    }
+                }
                 break;
 
             default:
@@ -563,39 +564,39 @@ public class MainActivity extends AppCompatActivity {
                 float x = Float.parseFloat(payload.getString("x"));
                 float y = Float.parseFloat(payload.getString("y"));
                 logsTextView.append("\n" + "[MQTT] Joystick (" + x + ", " + y + ")");
-//                sRobot.skidJoy(x, y);
+                sRobot.skidJoy(x, y);
                 break;
 
             case "position":
                 float pos_x = Float.parseFloat(payload.getString("x"));
                 float pos_y = Float.parseFloat(payload.getString("y"));
-                float angle = Integer.parseInt(payload.getString("angle"));
+                int angle = Integer.parseInt(payload.getString("angle"));
                 float yaw = Float.parseFloat(payload.getString("yaw"));
                 logsTextView.append("\n" + "[MQTT] goToPosition (" + pos_x + ", " + pos_y + ", " + angle + "," + yaw + ")");
-//                sRobot.goToPosition(pos_x, pos_y, angle, yaw);
+                sRobot.goToPosition(new Position(pos_x, pos_y, yaw, angle));
                 break;
 
             case "turn_by":
                 float turnAngle = Float.parseFloat(payload.getString("angle"));
                 logsTextView.append("\n" + "[MQTT] TurnBy ( " + turnAngle + " )");
-//              sRobot.turnBy(Integer.parseInt(payload.getString("angle")), 1.0f);
+              sRobot.turnBy(Integer.parseInt(payload.getString("angle")), 1.0f);
                 break;
 
             case "tilt":
                 float tiltAngle = Float.parseFloat(payload.getString("angle"));
                 logsTextView.append("\n" + "[MQTT] Tilt ( " + tiltAngle + " )");
-//              sRobot.tiltAngle(Integer.parseInt(payload.getString("angle")));
+              sRobot.tiltAngle(Integer.parseInt(payload.getString("angle")));
                 break;
 
             case "tilt_by":
                 float tiltByAngle = Float.parseFloat(payload.getString("angle"));
                 logsTextView.append("\n" + "[MQTT] TiltBy ( " + tiltByAngle + " )");
-//                sRobot.tiltBy(Integer.parseInt(payload.getString("angle")), 1.0f);
+                sRobot.tiltBy(Integer.parseInt(payload.getString("angle")), 1.0f);
                 break;
 
             case "stop":
                 logsTextView.append("\n" + "[MQTT] Stop");
-//                sRobot.stopMovement();
+                sRobot.stopMovement();
                 break;
 
             default:
@@ -741,5 +742,35 @@ public class MainActivity extends AppCompatActivity {
     private void hangUp() {
         Intent hangupBroadcastIntent = BroadcastIntentHelper.buildHangUpIntent();
         LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(hangupBroadcastIntent);
+    }
+
+    @SuppressLint("LogNotTimber")
+    @Override
+    public void onCurrentPositionChanged(@NotNull Position position) {
+
+        JSONObject payload = new JSONObject();
+
+        try {
+            if (position != null) {
+                payload.put("position_x", position.getX());
+                payload.put("position_y", position.getY());
+                payload.put("tilt", position.getTiltAngle());
+                payload.put("yaw", position.getYaw());
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        Log.i("onCurrentPositionChanged", "[MQTT] Position Update: " + payload.toString());
+        logsTextView.append("\n[MQTT] Position Update: " + payload.toString());
+        try {
+            if (mMqttClient != null && mMqttClient.isConnected()) {
+                MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
+                mMqttClient.publish("temi/" + sSerialNumber + "/status/position", message);
+            }
+        } catch (MqttException e) {
+            Log.i("Error onCurrentPositionChanged","Error to publish mqtt message in onCurrentPositionChanged");
+            e.printStackTrace();
+        }
     }
 }

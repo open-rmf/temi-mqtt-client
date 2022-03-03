@@ -21,7 +21,8 @@ android {
         buildConfigField("String", "MQTT_USERNAME", secretsProperties['MQTT_USERNAME'])
         buildConfigField("String", "MQTT_PASSWORD", secretsProperties['MQTT_PASSWORD'])
         buildConfigField("String", "VIDEOROOM_URL", "\"https://meet.jit.si\"")
-        buildConfigField("String", "ROBOT_NAME", "\"temi_2\"")
+        buildConfigField("String", "ROBOT_NAME", secretsProperties['ROBOT_NAME'])
+        buildConfigField("String", "ROBOT_SERIAL", secretsProperties['ROBOT_SERIAL'])
     }
     signingConfigs {
         debug {
@@ -69,5 +70,5 @@ dependencies {
 
     // temi
     // https://github.com/robotemi/sdk
-//    implementation 'com.robotemi:sdk:0.10.77'
+    implementation 'com.robotemi:sdk:0.10.77'
 }
