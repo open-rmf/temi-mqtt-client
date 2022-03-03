@@ -768,6 +768,7 @@ public class MainActivity extends AppCompatActivity implements
             if (mMqttClient != null && mMqttClient.isConnected()) {
                 MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
                 mMqttClient.publish("temi/" + sSerialNumber + "/status/position", message);
+                logsScrollView.scrollTo(0, logsScrollView.getBottom());
             }
         } catch (MqttException e) {
             Log.i("Error onCurrentPositionChanged","Error to publish mqtt message in onCurrentPositionChanged");
