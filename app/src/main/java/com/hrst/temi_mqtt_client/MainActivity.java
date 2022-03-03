@@ -465,6 +465,7 @@ public class MainActivity extends AppCompatActivity implements
             MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
             if (mMqttClient.isConnected()) {
                 mMqttClient.publish("temi/" + sSerialNumber + "/status/info", message);
+                logsScrollView.scrollTo(0, logsScrollView.getBottom());
             }
         } catch (MqttException e) {
             e.printStackTrace();
