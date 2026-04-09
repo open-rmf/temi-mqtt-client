@@ -5,11 +5,12 @@ def secretsProperties = new Properties()
 secretsProperties.load(new FileInputStream(secretsPropertiesFile))
 
 android {
-    compileSdkVersion 29
+    namespace 'com.hrst.temi_mqtt_client'
+    compileSdkVersion 34
     defaultConfig {
         applicationId "com.hrst.temi_mqtt_client"
         minSdkVersion 23
-        targetSdkVersion 29
+        targetSdkVersion 34
         versionCode 2
         versionName "1.0.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -17,12 +18,12 @@ android {
         // secrets
         // @TODO: Doing this because it's easier for developer. Consider using Android Keystore API
         // Ref: https://github.com/codepath/android_guides/wiki/Storing-Secret-Keys-in-Android
-        buildConfigField("String", "MQTT_HOSTNAME", secretsProperties['MQTT_HOSTNAME'])
-        buildConfigField("String", "MQTT_USERNAME", secretsProperties['MQTT_USERNAME'])
-        buildConfigField("String", "MQTT_PASSWORD", secretsProperties['MQTT_PASSWORD'])
+        buildConfigField("String", "MQTT_HOSTNAME", secretsProperties['MQTT_HOSTNAME'] ?: "\"\"")
+        buildConfigField("String", "MQTT_USERNAME", secretsProperties['MQTT_USERNAME'] ?: "\"\"")
+        buildConfigField("String", "MQTT_PASSWORD", secretsProperties['MQTT_PASSWORD'] ?: "\"\"")
         buildConfigField("String", "VIDEOROOM_URL", "\"https://meet.jit.si\"")
-        buildConfigField("String", "ROBOT_NAME", secretsProperties['ROBOT_NAME'])
-        buildConfigField("String", "ROBOT_SERIAL", secretsProperties['ROBOT_SERIAL'])
+        buildConfigField("String", "ROBOT_NAME", secretsProperties['ROBOT_NAME'] ?: "\"\"")
+        buildConfigField("String", "ROBOT_SERIAL", secretsProperties['ROBOT_SERIAL'] ?: "\"\"")
     }
     signingConfigs {
         debug {
@@ -44,6 +45,9 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+    buildFeatures {
+        buildConfig = true
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -52,23 +56,30 @@ android {
 
 repositories {
     maven { url "https://repo.eclipse.org/content/repositories/paho-releases/" }
+    mavenCentral()
 }
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation 'androidx.appcompat:appcompat:1.3.1'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.0.0'
-    implementation ('org.jitsi.react:jitsi-meet-sdk:3.10.2') { transitive = true }
-
+    implementation 'androidx.legacy:legacy-support-v4:1.0.0'
 
     // paho-mqtt
-    // https://github.com/eclipse/paho.mqtt.java
     implementation('org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5')
-    // https://github.com/eclipse/paho.mqtt.android
-    implementation('org.eclipse.paho:org.eclipse.paho.android.service:1.1.1')
+    // Modern maintained fork of Paho Android Service
+    implementation 'com.github.hannesa2:paho.mqtt.android:3.3.5'
+    implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
 
     // temi
     // https://github.com/robotemi/sdk
     implementation 'com.robotemi:sdk:0.10.77'
+
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:rules:1.6.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
 }

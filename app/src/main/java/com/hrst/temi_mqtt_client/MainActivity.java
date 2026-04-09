@@ -1,11 +1,13 @@
 package com.hrst.temi_mqtt_client;
 
+import com.hrst.temi_mqtt_client.R;
+import com.hrst.temi_mqtt_client.BuildConfig;
+
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import android.annotation.SuppressLint;
 import android.content.BroadcastReceiver;
-import org.jitsi.meet.sdk.*;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -16,8 +18,11 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -35,7 +40,8 @@ import com.robotemi.sdk.listeners.OnUserInteractionChangedListener;
 import com.robotemi.sdk.navigation.listener.OnCurrentPositionChangedListener;
 import com.robotemi.sdk.navigation.model.Position;
 
-import org.eclipse.paho.android.service.MqttAndroidClient;
+import info.mqtt.android.service.Ack;
+import info.mqtt.android.service.MqttAndroidClient;
 import org.eclipse.paho.client.mqttv3.IMqttActionListener;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.IMqttToken;
@@ -66,8 +72,9 @@ public class MainActivity extends AppCompatActivity implements
     public static final String VIDEO_URL = "com.hrst.media.VIDEO_URL";
     public static final String WEBVIEW_URL = "com.hrst.media.WEBVIEW_URL";
 
-    private static final Handler sHandler = new Handler();
+    private static final Handler sHandler = new Handler(Looper.getMainLooper());
     private static Robot sRobot;
+    private static Position sCurrentPosition;
     // Temporarily set this for testing
     private static String sSerialNumber = BuildConfig.ROBOT_SERIAL;
     private static TextView logsTextView;
@@ -84,16 +91,100 @@ public class MainActivity extends AppCompatActivity implements
     }
     private static String sRobotName = BuildConfig.ROBOT_NAME;
 
-    private MqttAndroidClient mMqttClient;
-    private final BroadcastReceiver broadcastReceiver = new BroadcastReceiver() {
+    private static MqttAndroidClient mMqttClient;
+    private static Context sContext;
+    private static class BroadcastReceiverHandler extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
-            onBroadcastReceived(intent);
+            // onBroadcastReceived(intent);
         }
-    };
+    }
+    private final BroadcastReceiver broadcastReceiver = new BroadcastReceiverHandler();
 
-    private final Runnable periodicTask = new Runnable() {
-        // periodically publishes robot status to the MQTT broker.
+    private static class MqttCallbackHandler implements MqttCallback {
+        @SuppressLint("LogNotTimber")
+        @Override
+        public void connectionLost(Throwable cause) {
+            // this method is called when connection to server is lost
+            if (logsTextView != null) {
+                logsTextView.append("\n[MQTT] Connection Lost.");
+            }
+            Log.i(TAG, "Connection Lost");
+        }
+
+        @Override
+        public void deliveryComplete(IMqttDeliveryToken token) {
+            // called when delivery for a message has been completed, and all acknowledgements have been received
+        }
+
+        @SuppressLint("LogNotTimber")
+        @Override
+        public void messageArrived(String topic, MqttMessage message) throws Exception {
+            // this method is called when a message arrives from the server
+            String payloadStr = new String(message.getPayload(), StandardCharsets.UTF_8);
+            Log.i(TAG, "[MQTT] Topic: " + topic);
+            Log.i(TAG, "[MQTT] Message: " + payloadStr);
+
+            sHandler.post(() -> {
+                try {
+                    JSONObject payloadJson;
+                    try {
+                        payloadJson = new JSONObject(payloadStr);
+                    } catch (JSONException e) {
+                        // Not a JSON object, wrap raw payload
+                        payloadJson = new JSONObject();
+                        payloadJson.put("raw", payloadStr);
+                        payloadJson.put("location", payloadStr); // Assume it might be a location
+                        payloadJson.put("utterance", payloadStr); // Or a TTS utterance
+                        payloadJson.put("x", payloadStr); // Or a coordinate
+                        payloadJson.put("y", payloadStr);
+                        payloadJson.put("angle", payloadStr);
+                    }
+                    parseMessage(topic, payloadJson);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error handling MQTT message", e);
+                }
+            });
+        }
+    }
+
+    private static class MqttActionListenerHandler implements IMqttActionListener {
+        private final MqttAndroidClient client;
+        
+        public MqttActionListenerHandler(MqttAndroidClient client) {
+            this.client = client;
+        }
+
+        @SuppressLint("LogNotTimber")
+        @Override
+        public void onSuccess(IMqttToken asyncActionToken) {
+            if (logsTextView != null) {
+                logsTextView.append("\n[MQTT] Connected.");
+            }
+            Log.i(TAG, "Successfully connected to MQTT broker");
+            try {
+                // subscribe to all command-type messages directed at this robot
+                client.subscribe("temi/" + sSerialNumber + "/command/#", 0);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            // start a background task that periodically sends robot status information
+            // to the MQTT broker
+            sHandler.post(periodicTask);
+        }
+
+        @SuppressLint("LogNotTimber")
+        @Override
+        public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+            if (logsTextView != null) {
+                logsTextView.append("\n[MQTT] Failed to Connect.");
+            }
+            Log.i(TAG, "Failed to connect to MQTT broker");
+        }
+    }
+
+    private static class PeriodicTask implements Runnable {
         @SuppressLint("LogNotTimber")
         @Override
         public void run() {
@@ -101,12 +192,13 @@ public class MainActivity extends AppCompatActivity implements
             sHandler.postDelayed(this, 3000);
 
             try {
-                 MainActivity.this.robotPublishStatus();
+                 robotPublishStatus();
             } catch (JSONException e) {
                 e.printStackTrace();
             }
         }
-    };
+    }
+    private static final Runnable periodicTask = new PeriodicTask();
 
     //----------------------------------------------------------------------------------------------
     // ACTIVITY LIFE CYCLE METHODS
@@ -114,6 +206,7 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        sContext = getApplicationContext();
         setContentView(R.layout.activity_main);
         logsTextView = findViewById(R.id.logsTextView);
         logsTextView.setTextColor(Color.WHITE);
@@ -123,6 +216,9 @@ public class MainActivity extends AppCompatActivity implements
         sRobot = Robot.getInstance();
 
         // initialize hostname
+        EditText etHostname = findViewById(R.id.et_hostname);
+        etHostname.setText(BuildConfig.MQTT_HOSTNAME);
+
         findViewById(R.id.button_connect).performClick();
     }
 
@@ -168,14 +264,10 @@ public class MainActivity extends AppCompatActivity implements
 
         // disconnect MQTT client from broker
         if (mMqttClient != null && mMqttClient.isConnected()) {
-            try {
-                Log.i(TAG, "[MQTT] Disconnecting MQTT client from broker");
-                mMqttClient.unsubscribe("temi/" + sSerialNumber + "/command/#");
-                mMqttClient.disconnect();
-                Log.i(TAG, "[MQTT] Done");
-            } catch (MqttException e) {
-                e.printStackTrace();
-            }
+            Log.i(TAG, "[MQTT] Disconnecting MQTT client from broker");
+            mMqttClient.unsubscribe("temi/" + sSerialNumber + "/command/#");
+            mMqttClient.disconnect();
+            Log.i(TAG, "[MQTT] Done");
         }
     }
 
@@ -189,7 +281,33 @@ public class MainActivity extends AppCompatActivity implements
 //    @Override
     public void onRobotReady(boolean isReady) {
         if (isReady) {
-            sSerialNumber = sRobot.getSerialNumber();
+            String oldSerial = sSerialNumber;
+            // Use serial from BuildConfig if provided, otherwise use robot's actual serial
+            if (BuildConfig.ROBOT_SERIAL != null && !BuildConfig.ROBOT_SERIAL.trim().isEmpty()) {
+                sSerialNumber = BuildConfig.ROBOT_SERIAL.trim();
+            } else {
+                sSerialNumber = sRobot.getSerialNumber();
+            }
+            
+            // Use name from BuildConfig if provided
+            if (BuildConfig.ROBOT_NAME != null && !BuildConfig.ROBOT_NAME.trim().isEmpty()) {
+                sRobotName = BuildConfig.ROBOT_NAME.trim();
+            }
+            
+            Log.i(TAG, "[ROBOT][READY] Serial: " + sSerialNumber + " Name: " + sRobotName);
+            
+            if (mMqttClient != null && mMqttClient.isConnected() && !Objects.equals(oldSerial, sSerialNumber)) {
+                Log.i(TAG, "[MQTT] Serial changed, resubscribing...");
+                try {
+                    if (oldSerial != null && !oldSerial.isEmpty()) {
+                        mMqttClient.unsubscribe("temi/" + oldSerial + "/command/#");
+                    }
+                    mMqttClient.subscribe("temi/" + sSerialNumber + "/command/#", 0);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            
             sRobot.hideTopBar(); // hides temi's top menu bar
             sRobot.toggleNavigationBillboard(true); // hides navigation billboard
             Log.i(TAG, "[ROBOT][READY]");
@@ -229,7 +347,7 @@ public class MainActivity extends AppCompatActivity implements
                 MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
                 mMqttClient.publish("temi/" + sSerialNumber + "/status/utils/battery", message);
             }
-        } catch (MqttException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -274,7 +392,7 @@ public class MainActivity extends AppCompatActivity implements
                 MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
                 mMqttClient.publish("temi/" + sSerialNumber + "/event/waypoint/goto", message);
             }
-        } catch (MqttException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -298,7 +416,7 @@ public class MainActivity extends AppCompatActivity implements
                 MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
                 mMqttClient.publish("temi/" + sSerialNumber + "/event/user/detection", message);
             }
-        } catch (MqttException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -322,7 +440,7 @@ public class MainActivity extends AppCompatActivity implements
                 MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
                 mMqttClient.publish("temi/" + sSerialNumber + "/event/user/interaction", message);
             }
-        } catch (MqttException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -336,9 +454,18 @@ public class MainActivity extends AppCompatActivity implements
      */
     @SuppressLint("LogNotTimber")
     public void connectToMqtt(View v) throws MqttException {
-        String hostUri;
-        hostUri = "tcp://" + BuildConfig.MQTT_HOSTNAME.trim() + ":1883";
+        EditText etHostname = findViewById(R.id.et_hostname);
+        String hostname = etHostname.getText().toString().trim();
+        if (hostname.isEmpty()) {
+            hostname = BuildConfig.MQTT_HOSTNAME;
+        }
+
+        String hostUri = "tcp://" + hostname + ":1883";
         Log.i(TAG, hostUri);
+
+        // Hide keyboard
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        imm.hideSoftInputFromWindow(etHostname.getWindowToken(), 0);
 
         // initialize MQTT
         if (mMqttClient != null && mMqttClient.isConnected() && hostUri.equals(mMqttClient.getServerURI())) {
@@ -356,33 +483,9 @@ public class MainActivity extends AppCompatActivity implements
      */
     private void initMqtt(String hostUri, String clientId) throws MqttException {
         logsTextView.append("\n[MQTT] Connecting..");
-        mMqttClient = new MqttAndroidClient(getApplicationContext(), hostUri, clientId);
+        mMqttClient = new MqttAndroidClient(getApplicationContext(), hostUri, clientId, Ack.AUTO_ACK);
 
-        mMqttClient.setCallback(new MqttCallback() {
-            @SuppressLint("LogNotTimber")
-            @Override
-            public void connectionLost(Throwable cause) {
-                // this method is called when connection to server is lost
-                logsTextView.append("\n[MQTT] Connection Lost.");
-                Log.i(TAG, "Connection Lost");
-            }
-
-            @Override
-            public void deliveryComplete(IMqttDeliveryToken token) {
-                // called when delivery for a message has been completed, and all acknowledgements have been received
-            }
-
-            @SuppressLint("LogNotTimber")
-            @Override
-            public void messageArrived(String topic, MqttMessage message) throws JSONException {
-                // this method is called when a message arrives from the server
-                Log.i(TAG, topic);
-                Log.i(TAG, message.toString());
-                JSONObject payload = new JSONObject(message.toString());
-                parseMessage(topic, payload);
-                logsScrollView.scrollTo(0, logsScrollView.getBottom());
-            }
-        });
+        mMqttClient.setCallback(new MqttCallbackHandler());
 
         // options that control how the client connects to a server
         // https://www.eclipse.org/paho/files/javadoc/org/eclipse/paho/client/mqttv3/MqttConnectOptions.html
@@ -402,51 +505,23 @@ public class MainActivity extends AppCompatActivity implements
         mqttConnectOptions.setWill("temi/" + sSerialNumber + "/lwt", payload.toString().getBytes(StandardCharsets.UTF_8), 1, false);
 
         // set username
-        if (BuildConfig.MQTT_USERNAME != null) {
-            BuildConfig.MQTT_USERNAME.trim();
+        if (BuildConfig.MQTT_USERNAME != null && !BuildConfig.MQTT_USERNAME.trim().isEmpty()) {
+            mqttConnectOptions.setUserName(BuildConfig.MQTT_USERNAME.trim());
         }
 
         // set password
-        if (BuildConfig.MQTT_PASSWORD != null) {
-            BuildConfig.MQTT_PASSWORD.trim();
+        if (BuildConfig.MQTT_PASSWORD != null && !BuildConfig.MQTT_PASSWORD.trim().isEmpty()) {
+            mqttConnectOptions.setPassword(BuildConfig.MQTT_PASSWORD.trim().toCharArray());
         }
 
-        try {
-            mMqttClient.connect(mqttConnectOptions, null, new IMqttActionListener() {
-                @SuppressLint("LogNotTimber")
-                @Override
-                public void onSuccess(IMqttToken asyncActionToken) {
-                    logsTextView.append("\n[MQTT] Connected.");
-                    Log.i(TAG, "Successfully connected to MQTT broker");
-                    try {
-                        // subscribe to all command-type messages directed at this robot
-                        mMqttClient.subscribe("temi/" + sSerialNumber + "/command/#", 0);
-                    } catch (MqttException e) {
-                        e.printStackTrace();
-                    }
-
-                    // start a background task that periodically sends robot status information
-                    // to the MQTT broker
-                    sHandler.post(periodicTask);
-                }
-
-                @SuppressLint("LogNotTimber")
-                @Override
-                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
-                    logsTextView.append("\n[MQTT] Failed to Connect.");
-                    Log.i(TAG, "Failed to connect to MQTT broker");
-                }
-            });
-        } catch (MqttException e) {
-            e.printStackTrace();
-        }
+        mMqttClient.connect(mqttConnectOptions, null, new MqttActionListenerHandler(mMqttClient));
     }
 
     /**
      * Publish robot status information
      * @throws JSONException Exception is thrown when it fails to publish
      */
-    public void robotPublishStatus() throws JSONException {
+    public static void robotPublishStatus() throws JSONException {
         JSONObject payload = new JSONObject();
         JSONArray waypointArray = new JSONArray();
 
@@ -459,15 +534,30 @@ public class MainActivity extends AppCompatActivity implements
 
         // generate payload
         payload.put("waypoint_list", waypointArray);
-        payload.put("battery_percentage", Objects.requireNonNull(sRobot.getBatteryData()).getBatteryPercentage());
+        BatteryData batteryData = sRobot.getBatteryData();
+        payload.put("battery_percentage", batteryData != null ? batteryData.getBatteryPercentage() : 0);
+
+        if (sCurrentPosition != null) {
+            payload.put("x", sCurrentPosition.getX());
+            payload.put("y", sCurrentPosition.getY());
+            payload.put("yaw", sCurrentPosition.getYaw());
+            payload.put("angle", sCurrentPosition.getTiltAngle());
+
+            JSONObject positionObj = new JSONObject();
+            positionObj.put("x", sCurrentPosition.getX());
+            positionObj.put("y", sCurrentPosition.getY());
+            positionObj.put("yaw", sCurrentPosition.getYaw());
+            positionObj.put("angle", sCurrentPosition.getTiltAngle());
+            payload.put("position", positionObj);
+        }
 
         try {
             MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
-            if (mMqttClient.isConnected()) {
+            if (mMqttClient != null && mMqttClient.isConnected()) {
                 mMqttClient.publish("temi/" + sSerialNumber + "/status/info", message);
                 logsScrollView.scrollTo(0, logsScrollView.getBottom());
             }
-        } catch (MqttException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -482,37 +572,50 @@ public class MainActivity extends AppCompatActivity implements
      * @throws JSONException Exception is thrown if parsing fails
      */
     @SuppressLint("LogNotTimber")
-    private void parseMessage(String topic, JSONObject payload) throws JSONException {
+    private static void parseMessage(String topic, JSONObject payload) throws JSONException {
         String[] topicTree = topic.split("/");
 
-        String robotID = topicTree[1];
-        String type = topicTree[2];
-        String category = topicTree[3];
+        if (topicTree.length < 4) {
+            Log.w(TAG, "Invalid topic format: " + topic);
+            return;
+        }
 
-        Log.d(TAG, "Robot-ID: " + robotID);
-        Log.d(TAG, "Type: " + type);
-        Log.d(TAG, "Category: " + category);
+        String robotID = topicTree[1];
+        String category = topicTree[3];
 
         if (robotID.equals(sSerialNumber)) {
             switch (category) {
                 case "waypoint":
-                    parseWaypoint(topicTree[4], payload);
+                    if (topicTree.length > 4) {
+                        parseWaypoint(topicTree[4], payload);
+                    } else {
+                        // Default to goto if command is missing
+                        parseWaypoint("goto", payload);
+                    }
                     break;
 
                 case "move":
-                    parseMove(topicTree[4], payload);
+                    if (topicTree.length > 4) {
+                        parseMove(topicTree[4], payload);
+                    }
                     break;
 
                 case "tts":
-                    sRobot.speak(TtsRequest.create(payload.getString("utterance"), true));
+                    String utterance = payload.optString("utterance", payload.optString("raw"));
+                    if (!utterance.isEmpty()) {
+                        Log.i(TAG, "[TTS] Speaking: " + utterance);
+                        sRobot.speak(TtsRequest.create(utterance, true));
+                    }
                     break;
 
                 case "media":
-                    parseMedia(topicTree[4], payload);
+                    if (topicTree.length > 4) {
+                        parseMedia(topicTree[4], payload);
+                    }
                     break;
 
                 default:
-                    Log.i(TAG, "Invalid topic: " + topic);
+                    Log.i(TAG, "Unknown category: " + category);
                     break;
             }
         }
@@ -525,29 +628,38 @@ public class MainActivity extends AppCompatActivity implements
      * @throws JSONException Exception is thrown when it's unable to get the location name from the payload
      */
     @SuppressLint("LogNotTimber")
-    private void parseWaypoint(String command, JSONObject payload) throws JSONException {
-        String locationName = payload.getString("location");
+    private static void parseWaypoint(String command, JSONObject payload) throws JSONException {
+        String locationName = payload.optString("location", payload.optString("raw")).trim();
+        if (locationName.isEmpty()) {
+            Log.w(TAG, "[WAYPOINT] Empty location name");
+            return;
+        }
 
         switch (command) {
             case "save":
+                Log.i(TAG, "[WAYPOINT] Saving location: " + locationName);
                 sRobot.saveLocation(locationName);
                 break;
 
             case "delete":
+                Log.i(TAG, "[WAYPOINT] Deleting location: " + locationName);
                 sRobot.deleteLocation(locationName);
                 break;
 
             case "goto":
-                // check that the location exists, then go to that location
-                for (String location : sRobot.getLocations()){
-                    if (location.equals(locationName.toLowerCase().trim())) {
-                        sRobot.goTo(locationName.toLowerCase().trim());
+                List<String> locations = sRobot.getLocations();
+                for (String location : locations) {
+                    if (location.equalsIgnoreCase(locationName)) {
+                        Log.i(TAG, "[WAYPOINT] Going to: " + location);
+                        sRobot.goTo(location);
+                        return;
                     }
                 }
+                Log.w(TAG, "[WAYPOINT] Location not found: " + locationName + ". Available: " + locations);
                 break;
 
             default:
-                Log.i(TAG, "[WAYPOINT] Unknown Locations Command");
+                Log.i(TAG, "[WAYPOINT] Unknown Command: " + command);
                 break;
         }
     }
@@ -559,7 +671,7 @@ public class MainActivity extends AppCompatActivity implements
      * @throws JSONException Exception is thrown if it's unable to get the (x, y) location from the payload
      */
     @SuppressLint("LogNotTimber")
-    private void parseMove(String command, JSONObject payload) throws JSONException {
+    private static void parseMove(String command, JSONObject payload) throws JSONException {
         switch (command) {
             case "joystick":
                 float x = Float.parseFloat(payload.getString("x"));
@@ -569,24 +681,24 @@ public class MainActivity extends AppCompatActivity implements
                 break;
 
             case "position":
-                float pos_x = Float.parseFloat(payload.getString("x"));
-                float pos_y = Float.parseFloat(payload.getString("y"));
-                int angle = Integer.parseInt(payload.getString("angle"));
-                float yaw = Float.parseFloat(payload.getString("yaw"));
-                logsTextView.append("\n" + "[MQTT] goToPosition (" + pos_x + ", " + pos_y + ", " + angle + "," + yaw + ")");
+                float pos_x = (float) payload.optDouble("x", 0.0);
+                float pos_y = (float) payload.optDouble("y", 0.0);
+                float yaw = (float) payload.optDouble("yaw", 0.0);
+                int angle = payload.optInt("angle", 0);
+                logsTextView.append("\n" + "[MQTT] goToPosition (" + pos_x + ", " + pos_y + ", " + yaw + ", " + angle + ")");
                 sRobot.goToPosition(new Position(pos_x, pos_y, yaw, angle));
                 break;
 
             case "turn_by":
                 float turnAngle = Float.parseFloat(payload.getString("angle"));
                 logsTextView.append("\n" + "[MQTT] TurnBy ( " + turnAngle + " )");
-              sRobot.turnBy(Integer.parseInt(payload.getString("angle")), 1.0f);
+                sRobot.turnBy(Integer.parseInt(payload.getString("angle")), 1.0f);
                 break;
 
             case "tilt":
                 float tiltAngle = Float.parseFloat(payload.getString("angle"));
                 logsTextView.append("\n" + "[MQTT] Tilt ( " + tiltAngle + " )");
-              sRobot.tiltAngle(Integer.parseInt(payload.getString("angle")));
+                sRobot.tiltAngle(Integer.parseInt(payload.getString("angle")));
                 break;
 
             case "tilt_by":
@@ -613,26 +725,26 @@ public class MainActivity extends AppCompatActivity implements
      * @throws JSONException Exception is thrown if it's unable to get payload data
      */
     @SuppressLint("LogNotTimber")
-    private void parseMedia(String media, JSONObject payload) throws JSONException {
+    private static void parseMedia(String media, JSONObject payload) throws JSONException {
         switch (media) {
             case "video":
                 logsTextView.append("\n" + "[MQTT] Play Video");
-                playVideo(this, payload.getString("url"));
+                playVideo(sContext, payload.getString("url"));
                 break;
 
             case "webview":
                 logsTextView.append("\n" + "[MQTT] Show WebView");
-                showWebview(this, payload.getString("url"));
+                showWebview(sContext, payload.getString("url"));
                 break;
 
             case "join":
-                logsTextView.append("\n" + "[MQTT] Join Video Room");
-                LaunchJitsi(sRobotName);
+                logsTextView.append("\n" + "[MQTT] Join Video Room - Jitsi Disabled");
+                // LaunchJitsi(sRobotName);
                 break;
 
             case "leave":
-                logsTextView.append("\n" + "[MQTT] Leave Video Room");
-                hangUp();
+                logsTextView.append("\n" + "[MQTT] Leave Video Room - Jitsi Disabled");
+                // hangUp();
                 break;
 
             default:
@@ -666,8 +778,9 @@ public class MainActivity extends AppCompatActivity implements
      * @param url URL to compatible video (https://developer.android.com/guide/topics/media/media-formats)
      */
     @SuppressLint("LogNotTimber")
-    public void playVideo(Context context, String url) {
-        Intent intent = new Intent(this, VideoActivity.class);
+    public static void playVideo(Context context, String url) {
+        Intent intent = new Intent(context, VideoActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.putExtra(VIDEO_URL, url);
 
         try {
@@ -682,8 +795,9 @@ public class MainActivity extends AppCompatActivity implements
      * @param url URL to display
      */
     @SuppressLint("LogNotTimber")
-    public void showWebview(Context context, String url) {
-        Intent intent = new Intent(this, WebViewActivity.class);
+    public static void showWebview(Context context, String url) {
+        Intent intent = new Intent(context, WebViewActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.putExtra(WEBVIEW_URL, url);
 
         try {
@@ -694,69 +808,43 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     public void LaunchJitsi(String text) {
-        if (text.length() > 0) {
-            JitsiMeetConferenceOptions options = new JitsiMeetConferenceOptions.Builder()
-                    .setServerURL(serverURL)
-                    .setRoom(text)
-                    .setAudioMuted(false)
-                    .setWelcomePageEnabled(false)
-                    .build();
-            JitsiMeetActivity.launch(this, options);
-        }
+        // Jitsi Disabled
     }
 
     private void registerForBroadcastMessages() {
-        IntentFilter intentFilter = new IntentFilter();
-
-        /* This registers for every possible event sent from JitsiMeetSDK
-           If only some of the events are needed, the for loop can be replaced
-           with individual statements:
-           ex:  intentFilter.addAction(BroadcastEvent.Type.AUDIO_MUTED_CHANGED.getAction());
-                intentFilter.addAction(BroadcastEvent.Type.CONFERENCE_TERMINATED.getAction());
-                ... other events
-         */
-        for (BroadcastEvent.Type type : BroadcastEvent.Type.values()) {
-            intentFilter.addAction(type.getAction());
-        }
-
-        LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, intentFilter);
+        // Jitsi Disabled
     }
 
     // Example for handling different JitsiMeetSDK events
     @SuppressLint("LogNotTimber")
     private void onBroadcastReceived(Intent intent) {
-        if (intent != null) {
-            BroadcastEvent event = new BroadcastEvent(intent);
-
-            switch (event.getType()) {
-                case CONFERENCE_JOINED:
-                    Log.i(TAG, "Conference Joined with url%s" + event.getData().get("url"));
-                    break;
-                case PARTICIPANT_JOINED:
-                    Log.i(TAG, "Participant joined%s" + event.getData().get("name"));
-                    break;
-            }
-        }
+        // Jitsi Disabled
     }
 
     // Example for sending actions to JitsiMeetSDK
     private void hangUp() {
-        Intent hangupBroadcastIntent = BroadcastIntentHelper.buildHangUpIntent();
-        LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(hangupBroadcastIntent);
+        // Jitsi Disabled
     }
 
     @SuppressLint("LogNotTimber")
     @Override
     public void onCurrentPositionChanged(@NotNull Position position) {
-
+        sCurrentPosition = position;
         JSONObject payload = new JSONObject();
 
         try {
             if (position != null) {
-                payload.put("position_x", position.getX());
-                payload.put("position_y", position.getY());
-                payload.put("tilt", position.getTiltAngle());
+                payload.put("x", position.getX());
+                payload.put("y", position.getY());
                 payload.put("yaw", position.getYaw());
+                payload.put("angle", position.getTiltAngle());
+
+                JSONObject positionObj = new JSONObject();
+                positionObj.put("x", position.getX());
+                positionObj.put("y", position.getY());
+                positionObj.put("yaw", position.getYaw());
+                positionObj.put("angle", position.getTiltAngle());
+                payload.put("position", positionObj);
             }
         } catch (JSONException e) {
             e.printStackTrace();
@@ -770,7 +858,7 @@ public class MainActivity extends AppCompatActivity implements
                 mMqttClient.publish("temi/" + sSerialNumber + "/status/position", message);
                 logsScrollView.scrollTo(0, logsScrollView.getBottom());
             }
-        } catch (MqttException e) {
+        } catch (Exception e) {
             Log.i("Error onCurrentPositionChanged","Error to publish mqtt message in onCurrentPositionChanged");
             e.printStackTrace();
         }

@@ -1,5 +1,7 @@
 package com.hrst.temi_mqtt_client;
 
+import com.hrst.temi_mqtt_client.R;
+
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.app.ProgressDialog;
