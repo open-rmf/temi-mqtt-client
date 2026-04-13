@@ -851,7 +851,7 @@ public class MainActivity extends AppCompatActivity implements
         }
 
         Log.i("onCurrentPositionChanged", "[MQTT] Position Update: " + payload.toString());
-        logsTextView.append("\n[MQTT] Position Update: " + payload.toString());
+        // logsTextView.append("\n[MQTT] Position Update: " + payload.toString());
         try {
             if (mMqttClient != null && mMqttClient.isConnected()) {
                 MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
